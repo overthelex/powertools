@@ -41,6 +41,7 @@ Tab completion works for `gotosave` options.
   - Intel: `intel_pstate` or `acpi-cpufreq` driver
 - **BIOS**: ACPI-compliant, CPU frequency scaling not locked by BIOS
 - **Kernel**: 5.x+ (needs `/sys/devices/system/cpu/cpufreq/` sysfs interface)
+- **Packages**: `ethtool` (installed automatically as a dependency)
 
 ### Kernel features used
 
