@@ -1,0 +1,336 @@
+#!/bin/bash
+# power-save - Enable power saving modes
+# Usage: power-save [--laptop|--router|--maxsave|--ultrasave]
+
+MODE="${1:---laptop}"
+
+if [ "$MODE" != "--laptop" ] && [ "$MODE" != "--router" ] && [ "$MODE" != "--maxsave" ] && [ "$MODE" != "--ultrasave" ]; then
+    echo "Usage: $0 [--laptop|--router|--maxsave|--ultrasave]"
+    echo "  --laptop    : Full power saving (default)"
+    echo "  --router    : Router-optimized power saving"
+    echo "  --maxsave   : EXTREME power saving"
+    echo "  --ultrasave : ULTRA-EXTREME (2 cores, 600MHz) ⚠️ EXPERIMENTAL"
+    exit 1
+fi
+
+if [ "$MODE" = "--laptop" ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║     SWITCHING TO LAPTOP POWER SAVE MODE            ║"
+    echo "╚════════════════════════════════════════════════════╝"
+elif [ "$MODE" = "--router" ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║     SWITCHING TO ROUTER POWER SAVE MODE            ║"
+    echo "╚════════════════════════════════════════════════════╝"
+elif [ "$MODE" = "--maxsave" ]; then
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║   SWITCHING TO EXTREME MAX SAVE MODE               ║"
+    echo "║   ⚠️  WARNING: MINIMAL PERFORMANCE ⚠️               ║"
+    echo "╚════════════════════════════════════════════════════╝"
+else
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║        ⚠️  ULTRA-EXTREME SAVE MODE ⚠️                ║"
+    echo "║   2 CPU CORES | 600 MHz MAX | MINIMAL RAM          ║"
+    echo "║        ⚡ EXPERIMENTAL MODE ⚡                       ║"
+    echo "╚════════════════════════════════════════════════════╝"
+fi
+echo "[$(date)]"
+echo
+
+# ============================================
+# COMMON OPTIMIZATIONS (all modes)
+# ============================================
+
+# Disable CPU Boost/Turbo
+if [ -f /sys/devices/system/cpu/cpufreq/boost ]; then
+    echo 0 > /sys/devices/system/cpu/cpufreq/boost
+    echo "✓ CPU Boost disabled"
+fi
+
+# Set all CPUs to powersave governor
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo powersave > $cpu 2>/dev/null
+done
+echo "✓ All CPUs set to powersave governor"
+
+# Set energy performance preference to power
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+    echo power > $cpu 2>/dev/null
+done
+echo "✓ Energy performance preference set to power"
+
+# ============================================
+# MODE-SPECIFIC OPTIMIZATIONS
+# ============================================
+
+if [ "$MODE" = "--ultrasave" ]; then
+    # ULTRASAVE MODE - ULTRA-EXTREME power saving
+
+    # Limit CPU to MINIMUM frequency (600 MHz)
+    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq; do
+        echo 603379 > $cpu 2>/dev/null  # Minimum possible frequency
+    done
+    echo "✓ CPU max frequency set to MINIMUM (603 MHz)"
+
+    # Keep only 2 CPU cores active (CPU0 and CPU1)
+    TOTAL_CPUS=$(nproc --all)
+    DISABLED=0
+    for i in $(seq 2 $((TOTAL_CPUS - 1))); do
+        if [ -f /sys/devices/system/cpu/cpu${i}/online ]; then
+            echo 0 > /sys/devices/system/cpu/cpu${i}/online 2>/dev/null && DISABLED=$((DISABLED + 1))
+        fi
+    done
+    echo "✓ Disabled $DISABLED CPU cores (keeping only 2 active: CPU0, CPU1)"
+
+    # Ultra-aggressive PCIe ASPM
+    if [ -f /sys/module/pcie_aspm/parameters/policy ]; then
+        echo powersupersave > /sys/module/pcie_aspm/parameters/policy
+        echo "✓ PCIe ASPM set to powersupersave"
+    fi
+
+    # Maximum laptop mode
+    echo 15 > /proc/sys/vm/laptop_mode
+    echo "✓ Laptop mode enabled (level: 15, ultra-extreme)"
+
+    # Ultra-aggressive VM dirty parameters (60s/120s)
+    echo 6000 > /proc/sys/vm/dirty_writeback_centisecs
+    echo 12000 > /proc/sys/vm/dirty_expire_centisecs
+    echo "✓ VM dirty parameters optimized (60s/120s)"
+
+    # Disable Wake-on-LAN
+    ethtool -s enp10s0 wol d 2>/dev/null
+    ethtool -s enp11s0 wol d 2>/dev/null
+    echo "✓ Wake-on-LAN disabled on all interfaces"
+
+    # Enable runtime PM for all devices
+    for device in /sys/class/net/enp*/device/power/control; do
+        echo auto > $device 2>/dev/null
+    done
+    echo "✓ Runtime PM enabled for network devices"
+
+    # Minimal NIC ring buffers
+    ethtool -G enp10s0 rx 64 tx 64 2>/dev/null
+    ethtool -G enp11s0 rx 64 tx 64 2>/dev/null
+    echo "✓ NIC ring buffers ultra-minimized (64)"
+
+    # Disable all NIC offload features
+    for iface in enp10s0 enp11s0; do
+        ethtool -K $iface gso off gro off tso off sg off rx off tx off 2>/dev/null
+    done
+    echo "✓ All NIC offload features disabled"
+
+    # Aggressive USB autosuspend
+    echo 0 > /sys/module/usbcore/parameters/autosuspend
+    echo "✓ USB autosuspend set to immediate"
+
+    # Enable SATA ALPM
+    for host in /sys/class/scsi_host/host*/link_power_management_policy; do
+        echo min_power > $host 2>/dev/null
+    done
+    echo "✓ SATA link power management set to min_power"
+
+    # Offline memory blocks (EXPERIMENTAL - commented out by default)
+    # WARNING: This can cause system instability!
+    # Uncomment only if you know what you're doing
+    # MEMORY_BLOCKS=$(ls -1d /sys/devices/system/memory/memory* | wc -l)
+    # KEEP_BLOCKS=$((MEMORY_BLOCKS / 4))  # Keep 1/4 of memory
+    # echo "⚠️  Memory hotplug available but DISABLED for safety"
+    # echo "   Total memory blocks: $MEMORY_BLOCKS"
+    # echo "   To manually offline memory (RISKY):"
+    # echo "   for i in \$(seq $KEEP_BLOCKS \$((MEMORY_BLOCKS-1))); do"
+    # echo "     echo offline > /sys/devices/system/memory/memory\$i/state 2>/dev/null"
+    # echo "   done"
+
+    echo
+    echo "⚠️⚠️⚠️  ULTRA-EXTREME POWER SAVING ACTIVE ⚠️⚠️⚠️"
+    echo "Expected power reduction: 40-60W from baseline"
+    echo "Estimated total power: 40-50W"
+    echo
+    echo "Performance impact:"
+    echo "  - CPU: ONLY 2 cores at 600 MHz MAX"
+    echo "  - Routing: Will work but VERY slow"
+    echo "  - Network latency: +5-15ms"
+    echo "  - Max throughput: ~100-200 Mbps"
+    echo "  - Disk operations: Very slow"
+    echo "  - System may feel unresponsive"
+    echo
+    echo "⚠️  Use only when system is idle or overnight!"
+
+elif [ "$MODE" = "--maxsave" ]; then
+    # MAXSAVE MODE - EXTREME power saving
+
+    # Limit maximum CPU frequency to 2 GHz
+    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq; do
+        echo 2000000 > $cpu 2>/dev/null
+    done
+    echo "✓ CPU max frequency limited to 2000 MHz"
+
+    # Disable half of CPU cores (keep 8 out of 16)
+    TOTAL_CPUS=$(nproc --all)
+    KEEP_CPUS=$((TOTAL_CPUS / 2))
+    DISABLED=0
+    for i in $(seq $KEEP_CPUS $((TOTAL_CPUS - 1))); do
+        if [ -f /sys/devices/system/cpu/cpu${i}/online ]; then
+            echo 0 > /sys/devices/system/cpu/cpu${i}/online 2>/dev/null && DISABLED=$((DISABLED + 1))
+        fi
+    done
+    echo "✓ Disabled $DISABLED CPU cores (keeping $KEEP_CPUS active)"
+
+    # Ultra-aggressive PCIe ASPM
+    if [ -f /sys/module/pcie_aspm/parameters/policy ]; then
+        echo powersupersave > /sys/module/pcie_aspm/parameters/policy
+        echo "✓ PCIe ASPM set to powersupersave"
+    fi
+
+    # Maximum laptop mode
+    echo 10 > /proc/sys/vm/laptop_mode
+    echo "✓ Laptop mode enabled (level: 10, extreme)"
+
+    # Ultra-aggressive VM dirty parameters (30s/60s)
+    echo 3000 > /proc/sys/vm/dirty_writeback_centisecs
+    echo 6000 > /proc/sys/vm/dirty_expire_centisecs
+    echo "✓ VM dirty parameters optimized (30s/60s)"
+
+    # Disable Wake-on-LAN
+    ethtool -s enp10s0 wol d 2>/dev/null
+    ethtool -s enp11s0 wol d 2>/dev/null
+    echo "✓ Wake-on-LAN disabled on all interfaces"
+
+    # Enable runtime PM
+    for device in /sys/class/net/enp*/device/power/control; do
+        echo auto > $device 2>/dev/null
+    done
+    echo "✓ Runtime PM enabled for network devices"
+
+    # Minimal NIC ring buffers
+    ethtool -G enp10s0 rx 128 tx 128 2>/dev/null
+    ethtool -G enp11s0 rx 128 tx 128 2>/dev/null
+    echo "✓ NIC ring buffers minimized (128)"
+
+    # Disable NIC offload features
+    for iface in enp10s0 enp11s0; do
+        ethtool -K $iface gso off gro off tso off sg off 2>/dev/null
+    done
+    echo "✓ NIC offload features disabled for maximum power save"
+
+    # Increase USB autosuspend
+    echo 1 > /sys/module/usbcore/parameters/autosuspend
+    echo "✓ USB autosuspend set to 1 second"
+
+    # Enable SATA ALPM
+    for host in /sys/class/scsi_host/host*/link_power_management_policy; do
+        echo min_power > $host 2>/dev/null
+    done
+    echo "✓ SATA link power management set to min_power"
+
+    echo
+    echo "⚠️  EXTREME POWER SAVING ACTIVE ⚠️"
+    echo "Expected power reduction: 30-50W"
+    echo "Performance impact:"
+    echo "  - CPU limited to 2 GHz (50% of max)"
+    echo "  - Only 8/16 CPU cores active"
+    echo "  - Network latency: +2-5ms"
+    echo "  - Max throughput: ~300-500 Mbps"
+    echo "  - Disk response may be slower"
+
+elif [ "$MODE" = "--laptop" ]; then
+    # LAPTOP MODE - Maximum power saving
+    # [Previous laptop mode code remains the same]
+
+    if [ -f /sys/module/pcie_aspm/parameters/policy ]; then
+        echo powersupersave > /sys/module/pcie_aspm/parameters/policy
+        echo "✓ PCIe ASPM set to powersupersave"
+    fi
+
+    echo 5 > /proc/sys/vm/laptop_mode
+    echo "✓ Laptop mode enabled (level: 5)"
+
+    echo 1500 > /proc/sys/vm/dirty_writeback_centisecs
+    echo 3000 > /proc/sys/vm/dirty_expire_centisecs
+    echo "✓ VM dirty parameters optimized (15s/30s)"
+
+    ethtool -s enp10s0 wol d 2>/dev/null
+    ethtool -s enp11s0 wol d 2>/dev/null
+    echo "✓ Wake-on-LAN disabled on all interfaces"
+
+    for device in /sys/class/net/enp*/device/power/control; do
+        echo auto > $device 2>/dev/null
+    done
+    echo "✓ Runtime PM enabled for network devices"
+
+    ethtool -G enp10s0 rx 256 tx 256 2>/dev/null
+    ethtool -G enp11s0 rx 256 tx 256 2>/dev/null
+    echo "✓ NIC ring buffers minimized"
+
+    for iface in enp10s0 enp11s0; do
+        ethtool -K $iface gso off gro off tso off 2>/dev/null
+    done
+    echo "✓ NIC offload features optimized for power"
+
+    echo
+    echo "Expected power reduction: 20-35W"
+    echo "Note: May add 1-2ms latency, reduced max throughput"
+
+else
+    # ROUTER MODE - Balanced power saving
+    # [Previous router mode code remains the same]
+
+    if [ -f /sys/module/pcie_aspm/parameters/policy ]; then
+        echo powersave > /sys/module/pcie_aspm/parameters/policy
+        echo "✓ PCIe ASPM set to powersave (conservative)"
+    fi
+
+    echo 2 > /proc/sys/vm/laptop_mode
+    echo "✓ Laptop mode enabled (level: 2, mild)"
+
+    echo 1000 > /proc/sys/vm/dirty_writeback_centisecs
+    echo 2000 > /proc/sys/vm/dirty_expire_centisecs
+    echo "✓ VM dirty parameters optimized (10s/20s)"
+
+    ethtool -s enp10s0 wol g 2>/dev/null
+    ethtool -s enp11s0 wol d 2>/dev/null
+    echo "✓ Wake-on-LAN: LAN=enabled, WAN=disabled"
+
+    for device in /sys/class/net/enp*/device/power/control; do
+        echo on > $device 2>/dev/null
+    done
+    echo "✓ Runtime PM disabled (network stability)"
+
+    ethtool -G enp10s0 rx 512 tx 512 2>/dev/null
+    ethtool -G enp11s0 rx 512 tx 512 2>/dev/null
+    echo "✓ NIC ring buffers at default (512)"
+
+    for iface in enp10s0 enp11s0; do
+        ethtool -K $iface gso on gro on tso on 2>/dev/null
+    done
+    echo "✓ NIC offload features enabled (performance)"
+
+    echo
+    echo "Expected power reduction: 10-20W"
+    echo "Note: Minimal impact on routing performance"
+fi
+
+# ============================================
+# FINAL STATUS
+# ============================================
+
+echo
+CURRENT_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)
+MIN_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq)
+MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq)
+ACTIVE_CPUS=$(grep -c ^processor /proc/cpuinfo)
+TOTAL_CPUS=$(nproc --all)
+echo "CPU Frequency: ${CURRENT_FREQ} KHz (range: ${MIN_FREQ}-${MAX_FREQ} KHz)"
+echo "Active CPUs: $ACTIVE_CPUS / $TOTAL_CPUS"
+
+echo
+if [ "$MODE" = "--laptop" ]; then
+    echo "Mode: 💤 LAPTOP POWER SAVE (maximum efficiency)"
+elif [ "$MODE" = "--router" ]; then
+    echo "Mode: 🌐 ROUTER POWER SAVE (routing optimized)"
+elif [ "$MODE" = "--maxsave" ]; then
+    echo "Mode: ⚡ EXTREME MAX SAVE (absolute minimum power)"
+else
+    echo "Mode: ⚡⚡⚡ ULTRA-EXTREME SAVE (experimental minimum)"
+fi
+echo "[$(date)] Power save mode enabled - routing still active"
+echo

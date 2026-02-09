@@ -1,0 +1,86 @@
+#!/bin/bash
+# power-performance - Restore performance mode
+
+echo "[$(date)] Switching to PERFORMANCE mode..."
+
+# Re-enable all CPU cores (in case they were disabled)
+TOTAL_CPUS=$(nproc --all)
+ENABLED=0
+for i in $(seq 1 $((TOTAL_CPUS - 1))); do
+    if [ -f /sys/devices/system/cpu/cpu${i}/online ]; then
+        CURRENT=$(cat /sys/devices/system/cpu/cpu${i}/online)
+        if [ "$CURRENT" = "0" ]; then
+            echo 1 > /sys/devices/system/cpu/cpu${i}/online 2>/dev/null && ENABLED=$((ENABLED + 1))
+        fi
+    fi
+done
+if [ $ENABLED -gt 0 ]; then
+    echo "✓ Re-enabled $ENABLED CPU cores"
+fi
+
+# Restore maximum CPU frequency to default
+MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null || echo "4700000")
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq; do
+    echo $MAX_FREQ > $cpu 2>/dev/null
+done
+echo "✓ CPU max frequency restored to default"
+
+# Enable CPU Boost/Turbo
+if [ -f /sys/devices/system/cpu/cpufreq/boost ]; then
+    echo 1 > /sys/devices/system/cpu/cpufreq/boost
+    echo "✓ CPU Boost enabled"
+fi
+
+# Set PCIe ASPM to default
+if [ -f /sys/module/pcie_aspm/parameters/policy ]; then
+    echo default > /sys/module/pcie_aspm/parameters/policy
+    echo "✓ PCIe ASPM set to default"
+fi
+
+# Set all CPUs to performance governor
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance > $cpu 2>/dev/null
+done
+echo "✓ All CPUs set to performance governor"
+
+# Set energy performance preference to performance
+for cpu in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+    echo performance > $cpu 2>/dev/null
+done
+echo "✓ Energy performance preference set to performance"
+
+# Disable laptop mode
+echo 0 > /proc/sys/vm/laptop_mode
+echo "✓ Laptop mode disabled"
+
+# Restore default VM dirty parameters
+echo 500 > /proc/sys/vm/dirty_writeback_centisecs
+echo 3000 > /proc/sys/vm/dirty_expire_centisecs
+echo "✓ VM dirty parameters restored"
+
+# Enable Wake-on-LAN for LAN interface
+ethtool -s enp10s0 wol g 2>/dev/null
+echo "✓ Wake-on-LAN enabled on enp10s0"
+
+# Set runtime PM to always on
+for device in /sys/class/net/enp*/device/power/control; do
+    echo on > $device 2>/dev/null
+done
+echo "✓ Runtime PM set to always on"
+
+# Restore NIC ring buffers to default
+ethtool -G enp10s0 rx 512 tx 512 2>/dev/null
+ethtool -G enp11s0 rx 512 tx 512 2>/dev/null
+echo "✓ NIC ring buffers restored"
+
+# Re-enable NIC offload features
+for iface in enp10s0 enp11s0; do
+    ethtool -K $iface gso on gro on tso on 2>/dev/null
+done
+echo "✓ NIC offload features enabled"
+
+CURRENT_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)
+MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq)
+echo "✓ Current CPU frequency: ${CURRENT_FREQ} KHz (max: ${MAX_FREQ} KHz)"
+
+echo "[$(date)] PERFORMANCE mode enabled"

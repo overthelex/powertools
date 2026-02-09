@@ -1,0 +1,4 @@
+_gotosave() {
+    COMPREPLY=($(compgen -W "--laptop --router --maxsave --ultrasave --help" -- "${COMP_WORDS[COMP_CWORD]}"))
+}
+complete -F _gotosave gotosave

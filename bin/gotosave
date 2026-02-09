@@ -1,0 +1,57 @@
+#!/bin/bash
+# gotosave - Enable power saving mode
+# Usage: gotosave [--laptop|--router|--maxsave|--ultrasave]
+#   --laptop    : Full power saving with aggressive optimizations (default)
+#   --router    : Router-optimized power saving (preserves network performance)
+#   --maxsave   : EXTREME power saving (minimum performance, maximum efficiency)
+#   --ultrasave : ULTRA-EXTREME (2 cores, 600MHz) - EXPERIMENTAL
+
+MODE="${1:---laptop}"
+
+if [ "$MODE" = "--help" ] || [ "$MODE" = "-h" ]; then
+    echo "Usage: gotosave [--laptop|--router|--maxsave|--ultrasave]"
+    echo
+    echo "Power saving modes for LocalRouter:"
+    echo
+    echo "  --laptop    Full power saving mode (default)"
+    echo "              - Maximum power reduction (20-35W)"
+    echo "              - Aggressive disk/network optimizations"
+    echo "              - May add 1-2ms latency"
+    echo "              - Best for: always-on server with low traffic"
+    echo
+    echo "  --router    Router-optimized power saving"
+    echo "              - Moderate power reduction (10-20W)"
+    echo "              - Preserves network performance"
+    echo "              - Minimal latency impact"
+    echo "              - Best for: active router with regular traffic"
+    echo
+    echo "  --maxsave   ⚡ EXTREME power saving mode"
+    echo "              - MAXIMUM power reduction (30-50W)"
+    echo "              - CPU limited to 2 GHz, half cores disabled"
+    echo "              - Significant performance impact"
+    echo "              - Network latency: +2-5ms"
+    echo "              - Max throughput: ~300-500 Mbps"
+    echo "              - Best for: overnight/idle periods, minimal activity"
+    echo
+    echo "  --ultrasave ⚡⚡⚡ ULTRA-EXTREME mode (EXPERIMENTAL)"
+    echo "              - ABSOLUTE MINIMUM power (~40-50W)"
+    echo "              - CPU: ONLY 2 cores at 600 MHz MAX"
+    echo "              - System will be VERY slow"
+    echo "              - Network latency: +5-15ms"
+    echo "              - Max throughput: ~100-200 Mbps"
+    echo "              - Best for: complete idle, overnight"
+    echo "              - ⚠️  May cause issues, use with caution!"
+    echo
+    echo "Examples:"
+    echo "  gotosave              # Default laptop mode"
+    echo "  gotosave --laptop     # Explicit laptop mode"
+    echo "  gotosave --router     # Router mode"
+    echo "  gotosave --maxsave    # Extreme power saving"
+    echo "  gotosave --ultrasave  # Ultra-extreme (experimental)"
+    echo
+    echo "To check current mode: powermode"
+    echo "To restore performance: gotoperf"
+    exit 0
+fi
+
+sudo /usr/local/sbin/power-save "$MODE"

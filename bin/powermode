@@ -1,0 +1,63 @@
+#!/bin/bash
+# powermode - Check current power mode status
+
+echo "=== Current Power Mode Status ==="
+echo
+
+# CPU Governor
+echo "CPU Governor:"
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "N/A"
+
+# CPU Boost
+echo -n "CPU Boost: "
+if [ -f /sys/devices/system/cpu/cpufreq/boost ]; then
+    BOOST=$(cat /sys/devices/system/cpu/cpufreq/boost)
+    if [ "$BOOST" = "1" ]; then
+        echo "ENABLED (performance mode)"
+    else
+        echo "DISABLED (power save mode)"
+    fi
+else
+    echo "N/A"
+fi
+
+# Energy Performance Preference
+echo -n "Energy Preference: "
+cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || echo "N/A"
+
+# PCIe ASPM
+echo -n "PCIe ASPM: "
+ASPM=$(cat /sys/module/pcie_aspm/parameters/policy 2>/dev/null | grep -o '\[.*\]' | tr -d '[]')
+echo "$ASPM"
+
+# CPU Frequency
+MIN_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq)
+MAX_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq)
+CUR_FREQ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq)
+echo "CPU Frequency: ${CUR_FREQ} KHz (min: ${MIN_FREQ}, max: ${MAX_FREQ})"
+
+# Laptop Mode
+echo -n "Laptop Mode: "
+LAPTOP=$(cat /proc/sys/vm/laptop_mode)
+if [ "$LAPTOP" = "0" ]; then
+    echo "DISABLED (performance mode)"
+else
+    echo "ENABLED (level: $LAPTOP)"
+fi
+
+# Wake-on-LAN
+echo
+echo "Wake-on-LAN status:"
+sudo ethtool enp10s0 2>/dev/null | grep "Wake-on:" | head -1
+sudo ethtool enp11s0 2>/dev/null | grep "Wake-on:" | head -1
+
+echo
+# Determine overall mode
+BOOST=$(cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || echo "1")
+if [ "$BOOST" = "0" ] && [ "$ASPM" = "powersupersave" ]; then
+    echo "Overall Mode: ⚡ POWER SAVE (routing active, minimal power)"
+elif [ "$BOOST" = "1" ]; then
+    echo "Overall Mode: 🚀 PERFORMANCE (maximum speed)"
+else
+    echo "Overall Mode: ⚖️  BALANCED"
+fi

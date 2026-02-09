@@ -1,0 +1,11 @@
+Package: powertools
+Version: 1.0
+Section: admin
+Priority: optional
+Architecture: all
+Depends: ethtool
+Maintainer: vovkes <vovkes@localrouter>
+Description: Power management scripts for LocalRouter
+ Scripts for switching between performance, power-save, maxsave,
+ and ultrasave modes. Includes gotoperf, gotosave, gotosleep,
+ powermode, and their underlying sbin scripts.

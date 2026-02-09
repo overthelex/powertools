@@ -1,0 +1,3 @@
+#!/bin/bash
+# gotoperf - Enable performance mode
+sudo /usr/local/sbin/power-performance

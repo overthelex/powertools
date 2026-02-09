@@ -1,0 +1,3 @@
+#!/bin/bash
+# gotosleep - suspend the system
+sudo /usr/local/sbin/suspend-system
